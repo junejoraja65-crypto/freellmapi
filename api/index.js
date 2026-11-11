@@ -6,8 +6,10 @@ import { applyDeclarativeConfigFromEnv } from '../server/dist/services/declarati
 let appInstance = null;
 
 export default async function handler(req, res) {
+  process.env.FREEAPI_DB_PATH = process.env.FREEAPI_DB_PATH || '/tmp/freeapi.db';
+  process.env.ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || '00c0cfd2cef8f53499559b80f062ad5ab5e909656d88cb3645dc2a719ee25ad5';
+
   if (!appInstance) {
-    process.env.FREEAPI_DB_PATH = process.env.FREEAPI_DB_PATH || '/tmp/freeapi.db';
     initDb(process.env.FREEAPI_DB_PATH);
     try {
       applyDeclarativeConfigFromEnv();
@@ -19,4 +21,3 @@ export default async function handler(req, res) {
   }
   return appInstance(req, res);
 }
-
