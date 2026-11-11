@@ -2,10 +2,11 @@ import { createApp } from '../server/dist/app.js';
 import { initDb } from '../server/dist/db/index.js';
 import { loadConfig } from '../server/dist/lib/config.js';
 import { applyDeclarativeConfigFromEnv } from '../server/dist/services/declarative-config.js';
+import { createUser, createSession, userCount } from '../server/dist/services/auth.js';
 
 let appInstance = null;
 
-export default async function handler(req, res) {
+function ensureDb() {
   process.env.FREEAPI_DB_PATH = process.env.FREEAPI_DB_PATH || '/tmp/freeapi.db';
   process.env.ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || '00c0cfd2cef8f53499559b80f062ad5ab5e909656d88cb3645dc2a719ee25ad5';
 
@@ -19,5 +20,41 @@ export default async function handler(req, res) {
     const config = loadConfig();
     appInstance = createApp(config);
   }
+}
+
+export default async function handler(req, res) {
+  ensureDb();
+
+  // On Vercel, allow first-run setup without requiring a CLI logged code
+  const url = req.url ? req.url.split('?')[0] : '';
+  if (req.method === 'POST' && (url === '/api/auth/setup' || url === '/api/auth/setup/')) {
+    if (userCount() > 0) {
+      res.status(409).json({ error: { message: 'Setup already completed. Use login instead.', type: 'setup_complete' } });
+      return;
+    }
+
+    let body = req.body;
+    if (typeof body === 'string') {
+      try { body = JSON.parse(body); } catch (_) {}
+    }
+    const email = body?.email;
+    const password = body?.password;
+
+    if (!email || !password || typeof password !== 'string' || password.length < 8) {
+      res.status(400).json({ error: { message: 'Password must be at least 8 characters' } });
+      return;
+    }
+
+    try {
+      const user = createUser(email, password);
+      const token = createSession(user.userId);
+      res.status(201).json({ token, email: user.email });
+      return;
+    } catch (err) {
+      res.status(400).json({ error: { message: err.message || 'Setup failed' } });
+      return;
+    }
+  }
+
   return appInstance(req, res);
 }
