@@ -2,7 +2,7 @@ import { createApp } from '../server/dist/app.js';
 import { initDb } from '../server/dist/db/index.js';
 import { loadConfig } from '../server/dist/lib/config.js';
 import { applyDeclarativeConfigFromEnv } from '../server/dist/services/declarative-config.js';
-import { createUser, createSession, userCount } from '../server/dist/services/auth.js';
+import { createUser, userCount } from '../server/dist/services/auth.js';
 
 let appInstance = null;
 
@@ -12,11 +12,26 @@ function ensureDb() {
 
   if (!appInstance) {
     initDb(process.env.FREEAPI_DB_PATH);
+
+    // Auto-seed admin user from env vars on every cold start
+    // This is needed because Vercel Serverless /tmp is ephemeral
+    const adminEmail = process.env.FREEAPI_ADMIN_EMAIL;
+    const adminPassword = process.env.FREEAPI_ADMIN_PASSWORD;
+    if (adminEmail && adminPassword && userCount() === 0) {
+      try {
+        createUser(adminEmail, adminPassword);
+        console.log('[FreeLLMAPI] Admin user auto-seeded from env vars:', adminEmail);
+      } catch (e) {
+        console.warn('[FreeLLMAPI] Could not auto-seed admin user:', e.message);
+      }
+    }
+
     try {
       applyDeclarativeConfigFromEnv();
     } catch (e) {
       console.warn('Declarative config warning:', e.message);
     }
+
     const config = loadConfig();
     appInstance = createApp(config);
   }
@@ -24,37 +39,5 @@ function ensureDb() {
 
 export default async function handler(req, res) {
   ensureDb();
-
-  // On Vercel, allow first-run setup without requiring a CLI logged code
-  const url = req.url ? req.url.split('?')[0] : '';
-  if (req.method === 'POST' && (url === '/api/auth/setup' || url === '/api/auth/setup/')) {
-    if (userCount() > 0) {
-      res.status(409).json({ error: { message: 'Setup already completed. Use login instead.', type: 'setup_complete' } });
-      return;
-    }
-
-    let body = req.body;
-    if (typeof body === 'string') {
-      try { body = JSON.parse(body); } catch (_) {}
-    }
-    const email = body?.email;
-    const password = body?.password;
-
-    if (!email || !password || typeof password !== 'string' || password.length < 8) {
-      res.status(400).json({ error: { message: 'Password must be at least 8 characters' } });
-      return;
-    }
-
-    try {
-      const user = createUser(email, password);
-      const token = createSession(user.userId);
-      res.status(201).json({ token, email: user.email });
-      return;
-    } catch (err) {
-      res.status(400).json({ error: { message: err.message || 'Setup failed' } });
-      return;
-    }
-  }
-
   return appInstance(req, res);
 }
