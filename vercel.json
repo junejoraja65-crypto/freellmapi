@@ -19,9 +19,20 @@
       "destination": "/api/index.js"
     },
     {
+      "source": "/livez",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/readyz",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/mcp/(.*)",
+      "destination": "/api/index.js"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
   ]
 }
-
